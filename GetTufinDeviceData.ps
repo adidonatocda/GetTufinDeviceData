@@ -1,0 +1,60 @@
+#SKIP SSL Cert Check, there are other ways to do this but this works well enough.
+SkipCert-Check
+Get-TufinSTData
+#Request to get list of devices, device ID, device Name, Device IP
+#Loop through all devices, revisions, and configurations
+#Write them to the console (Could be windows event log, log file, etc...
+#Build URI/URL Request Strings
+#For each device, get the globally unique revision numbers
+#For each device, get the running configuration
+#For each revision get the rules (commands and other details about the revision)
+
+Function Get-TufinSTData{
+    $cred = Get-Credential
+    $ST_ServerStr="https://192.168.0.101" #e.g. +securetrack/api/revisions/13/rules
+    $securetrackdeviceuri = $ST_ServerStr+"/securetrack/api/devices"
+    $securetrackrevsuri=$ST_ServerStr+"/securetrack/api/revisions"
+    [XML]$request=Invoke-WebRequest -Uri $securetrackdeviceuri -Credential $cred
+    for ($i = 0; $i -lt $request.devices.Count ; $i++) {
+            $devid = $request.devices.device.id[$i]
+            $devname = $request.devices.device.name[$i]
+            $devip = $request.devices.device.ip[$i]
+    #URI for Revisions/Device
+            $revisionsUrl="$securetrackdeviceuri"+"/"+$devid+"/revisions"
+    #URI for Configuration/Device
+            $configsurl="$securetrackdeviceuri"+"/"+$devid+"/config"
+    #Request for Configuration/Device
+            [XML]$configs=Invoke-WebRequest -Uri $configsurl -Credential $cred
+            foreach($config in $configs){ 
+            $config=$configs.device_config.InnerText #This is an XML CDATA Field and needs to be treated differently
+            write-host $config
+            }
+    #Request for Revisions/Device
+            [XML]$revisions=Invoke-WebRequest -Uri $revisionsUrl -Credential $cred
+            foreach($revision in $revisions){
+            write-host $devid "," $devname "," $devip "," $revisionsUrl "," $revision.revisions.revision.id
+
+            foreach($revnumber in $revision.revisions.revision.id){
+            $revisionrulesurl="$securetrackrevsuri"+"/"+$revnumber+"/rules"
+            write-host $revisionrulesurl
+
+            $revrulesdetail=Invoke-WebRequest -Uri $revisionrulesurl -Credential $cred
+            write-host $revrulesdetail.content
+        }
+}
+}
+}
+
+Function SkipCert-Check{add-type @"
+    using System.Net;
+    using System.Security.Cryptography.X509Certificates;
+    public class TrustAllCertsPolicy : ICertificatePolicy {
+        public bool CheckValidationResult(
+            ServicePoint srvPoint, X509Certificate certificate,
+            WebRequest request, int certificateProblem) {
+            return true;
+        }
+    }
+"@
+[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+}
